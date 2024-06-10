@@ -1,0 +1,115 @@
+import os
+import cv2
+import random
+import numpy as np
+import argparse
+
+class Downsample(object):
+    def __init__(self, ratio=1.0):
+        if ratio < 0.0 or ratio > 1.0:
+            raise ValueError('ratio should be in [0.0 <= ratio <= 1.0]. ' +
+                             'Please use upsampling for ratio > 1.0')
+        self.ratio = ratio
+
+    def __call__(self, clip):
+        nb_return_frame = np.floor(self.ratio * len(clip)).astype(int)
+        return_ind = [int(i) for i in np.linspace(1, len(clip), num=nb_return_frame)]
+        return [clip[i-1] for i in return_ind]
+
+class CenterCrop(object):
+    def __init__(self, size):
+        if isinstance(size, int):
+            size = (size, size)
+        self.size = size
+
+    def __call__(self, clip):
+        crop_h, crop_w = self.size
+        frames = []
+        for frame in clip:
+            im_h, im_w, _ = frame.shape
+            if crop_w > im_w or crop_h > im_h:
+                raise ValueError('Crop size should be smaller than the image size.')
+
+            w1 = (im_w - crop_w) // 2
+            h1 = (im_h - crop_h) // 2
+            frames.append(frame[h1:h1 + crop_h, w1:w1 + crop_w])
+        return frames
+
+def augment_videos(main_folder_path, output_folder_path, crop_size):
+    if not os.path.exists(output_folder_path):
+        os.makedirs(output_folder_path)
+
+    augmentations = ['horizontal', 'center_crop', 'rotated', 'downsampled', 'brightness', 'contrast', 'gaussian_noise']
+
+    center_crop = CenterCrop(crop_size)
+    downsample_video = Downsample(ratio=0.5)
+
+    for filename in os.listdir(main_folder_path):
+        if filename.endswith(".MOV"):
+            input_path = os.path.join(main_folder_path, filename)
+            
+            for aug in augmentations:
+                output_filename = f"{aug}_{filename}"
+                output_path = os.path.join(output_folder_path, output_filename)
+                
+                cap = cv2.VideoCapture(input_path)
+                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+
+                if aug == 'center_crop':
+                    crop_h, crop_w = crop_size
+                    out = cv2.VideoWriter(output_path, fourcc, fps, (crop_w, crop_h))
+                else:
+                    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+                frames = []
+                while True:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    frames.append(frame)
+
+                if aug == 'horizontal':
+                    frames = [cv2.flip(frame, 1) for frame in frames]
+                elif aug == 'center_crop':
+                    frames = center_crop(frames)
+                elif aug == 'rotated':
+                    angle = random.randint(-10, 10)
+                    M = cv2.getRotationMatrix2D((width // 2, height // 2), angle, 1)
+                    frames = [cv2.warpAffine(frame, M, (width, height)) for frame in frames]
+                elif aug == 'downsampled':
+                    frames = downsample_video(frames)
+                elif aug == 'brightness':
+                    factor = random.uniform(0.5, 1.5)
+                    frames = [cv2.convertScaleAbs(frame, alpha=factor, beta=0) for frame in frames]
+                elif aug == 'contrast':
+                    factor = random.uniform(0.5, 1.5)
+                    frames = [cv2.convertScaleAbs(frame, alpha=factor, beta=0) for frame in frames]
+                elif aug == 'gaussian_noise':
+                    frames = [cv2.add(frame, np.random.normal(0, 10, frame.shape).astype('uint8')) for frame in frames]
+
+                for frame in frames:
+                    out.write(frame)
+
+                cap.release()
+                out.release()
+                print(f"{aug.capitalize()} completed for {filename}")
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--main-folder-path', type=str, required=True, help='Path of folder that contains video clips to be augmented')
+    parser.add_argument('--output-folder-path', type=str, required=True, help='Path of folder that will contain augmented video clips')
+    parser.add_argument('--crop-size', type=int, nargs=2, default=[850, 850], help='Crop size for center cropping in the format (height, width)')
+
+    args = parser.parse_args()
+
+    main_folder_path = args.main_folder_path
+    output_folder_path = args.output_folder_path
+    crop_size = tuple(args.crop_size)
+
+    augment_videos(main_folder_path, output_folder_path, crop_size)
+
+if __name__ == '__main__':
+    main()
