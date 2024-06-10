@@ -70,9 +70,6 @@ def augment_video(input_path, output_path, crop_size, augmentation):
     elif augmentation == 'downsampled':
         downsample_video = Downsample(ratio=0.5)
         frames = downsample_video(frames)
-    elif augmentation == 'translated':
-        dx, dy = random.randint(-50, 50), random.randint(-50, 50)
-        M = np.float32([[1, 0, dx], [0, 1, dy]])
         frames = [cv2.warpAffine(frame, M, (width, height)) for frame in frames]
     elif augmentation == 'brightness':
         factor = random.uniform(0.5, 1.5)
@@ -93,7 +90,7 @@ def augment_videos(input_folder, output_folder, crop_size, max_clips):
         shutil.rmtree(output_folder)
     os.makedirs(output_folder, exist_ok=True)
 
-    augmentations = ['horizontal', 'center_crop', 'rotated', 'downsampled', 'translated', 'brightness', 'contrast']
+    augmentations = ['horizontal', 'center_crop', 'rotated', 'downsampled', 'brightness', 'contrast']
 
     video_clip_names = [f for f in os.listdir(input_folder) if f.endswith(('.mp4', '.avi', '.mov', '.mkv'))]
     no_of_clips_available = len(video_clip_names)
